@@ -1,0 +1,61 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate Xcode Project with XcodeGen
+        run: |
+          if ! command -v xcodegen &> /dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen generate
+
+      - name: Build Unsigned Release .app for iOS (arm64)
+        run: |
+          xcodebuild \
+            -project PhotoGalaxy.xcodeproj \
+            -scheme PhotoGalaxy \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+      - name: Package PhotoGalaxy.ipa
+        run: |
+          rm -rf Payload PhotoGalaxy.ipa
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/PhotoGalaxy.app Payload/
+          zip -r -q PhotoGalaxy.ipa Payload
+          ls -lh PhotoGalaxy.ipa
+
+      - name: Upload PhotoGalaxy.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhotoGalaxy-iOS-IPA
+          path: PhotoGalaxy.ipa
+
+      - name: Commit PhotoGalaxy.ipa to Repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f PhotoGalaxy.ipa
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update compiled PhotoGalaxy.ipa [skip ci]"
+            git pull --rebase origin main || true
+            git push origin main
+          fi
